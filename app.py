@@ -246,7 +246,9 @@ def export_to_final_excel():
     ws.title = "Quote"
 
     for r in dataframe_to_rows(df_header, index=False, header=False):
-        ws.append(r)
+        clean_row = ["" if (isinstance(cell, (int, float)) and cell == 0) else cell for cell in r]
+        ws.append(clean_row)
+
 
     ws.append([])
 
@@ -254,20 +256,26 @@ def export_to_final_excel():
     ws.append(main_headers)
 
     for idx, row in df_export.iterrows():
+        qty = "" if row["Qty"] == 0 else row["Qty"]
+        margin_unit_price = "" if row["Margin Unit Price"] == 0 else row["Margin Unit Price"]
+        margin_extended_price = "" if row["Margin Extended Price"] == 0 else row["Margin Extended Price"]
+
         ws.append([
             idx + 1,
             row["Part Name"],
             row["Description"],
-            row["Qty"],
-            row["Margin Unit Price"],
-            row["Margin Extended Price"]
+            qty,
+            margin_unit_price,
+            margin_extended_price
         ])
 
     ws.append([])
     ws.append([])
 
     for r in dataframe_to_rows(df_footer, index=False, header=False):
-        ws.append(r)
+        clean_row = ["" if (isinstance(cell, (int, float)) and cell == 0) else cell for cell in r]
+        ws.append(clean_row)
+
 
     final_output_file = "final_quote.xlsx"
     wb.save(final_output_file)

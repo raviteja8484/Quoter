@@ -222,6 +222,18 @@ def save_product():
     print(f"Saved: {data['Part Name']}")
     clear_all()
 
+def export_to_excel():
+    if not saved_products:
+        print("No products to export.")
+        return
+    try:
+        df_export = pd.DataFrame(saved_products)
+        df_export.to_excel(output_excel_file, index=False)
+        print(f"Exported all saved products to '{output_excel_file}'")
+        saved_products.clear()
+    except Exception as e:
+        print(f"Error exporting: {e}")
+
 def export_to_final_excel():
     if not os.path.exists(output_excel_file):
         print("Excel file not found. Export to Excel first.")
@@ -231,7 +243,6 @@ def export_to_final_excel():
         df_export = pd.read_excel(output_excel_file)
         wb_template = load_workbook("Header.xlsx")
         ws_template = wb_template.active
-        df_footer = pd.read_excel("Footer.xlsx")
     except Exception as e:
         print(f"Failed to read Excel files: {e}")
         return
@@ -301,7 +312,7 @@ def export_to_final_excel():
 
 # Buttons
 ttk.Button(left_frame, text="Save Product", command=save_product).pack(pady=10)
-ttk.Button(left_frame, text="Export to Calc Excel", command=export_to_final_excel).pack(pady=10)
+ttk.Button(left_frame, text="Export to Calc Excel", command=export_to_excel).pack(pady=10)
 ttk.Button(left_frame, text="Export to Final Excel", command=export_to_final_excel).pack(pady=10)
 ttk.Button(left_frame, text="Clear", command=clear_all).pack(pady=10)
 

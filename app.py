@@ -6,8 +6,10 @@ import os
 from openpyxl import load_workbook
 from openpyxl.utils.dataframe import dataframe_to_rows
 from fpdf import FPDF
-from openpyxl import Workbook
 from openpyxl.utils.dataframe import dataframe_to_rows
+from openpyxl import Workbook
+from openpyxl.styles import NamedStyle
+from copy import copy
 
 load_dotenv()
 # Checking
@@ -37,6 +39,23 @@ left_frame.pack(side="left", fill="both", expand=True, padx=10)
 
 right_frame = ttk.Frame(main_frame)
 right_frame.pack(side="right", fill="both", expand=True, padx=10)
+
+# def create_labeled_entry(parent, label_text, var, readonly=False):
+#     ttk.Label(parent, text=label_text, font=("Arial", 12)).pack(anchor="w", pady=(10, 0))
+#     entry = ttk.Entry(parent, textvariable=var)
+#     if readonly:
+#         entry.config(state="readonly")
+#     entry.pack(fill="x")
+#     return entry
+
+# Utility function to clone cell style
+def copy_cell_style(source_cell, target_cell):
+    target_cell.font = copy(source_cell.font)
+    target_cell.border = copy(source_cell.border)
+    target_cell.fill = copy(source_cell.fill)
+    target_cell.number_format = copy(source_cell.number_format)
+    target_cell.protection = copy(source_cell.protection)
+    target_cell.alignment = copy(source_cell.alignment)
 
 def create_labeled_entry(parent, label_text, var, readonly=False):
     ttk.Label(parent, text=label_text, font=("Arial", 12)).pack(anchor="w", pady=(10, 0))
@@ -203,25 +222,15 @@ def save_product():
     print(f"Saved: {data['Part Name']}")
     clear_all()
 
-def export_to_excel():
-    if not saved_products:
-        print("No products to export.")
-        return
-    try:
-        df_export = pd.DataFrame(saved_products)
-        df_export.to_excel(output_excel_file, index=False)
-        print(f"Exported all saved products to '{output_excel_file}'")
-        saved_products.clear()
-    except Exception as e:
-        print(f"Error exporting: {e}")
-
 def export_to_final_excel():
     if not os.path.exists(output_excel_file):
         print("Excel file not found. Export to Excel first.")
         return
+
     try:
         df_export = pd.read_excel(output_excel_file)
-        df_header = pd.read_excel("Header.xlsx")
+        wb_template = load_workbook("Header.xlsx")
+        ws_template = wb_template.active
         df_footer = pd.read_excel("Footer.xlsx")
     except Exception as e:
         print(f"Failed to read Excel files: {e}")
@@ -231,7 +240,6 @@ def export_to_final_excel():
         print("No data in Excel to export final file.")
         return
 
-    # Filter out rows where Qty or Margin Extended Price is 0
     df_export = df_export[
         (df_export["Qty"] != 0) & 
         (df_export["Margin Extended Price"] != 0)
@@ -241,49 +249,59 @@ def export_to_final_excel():
         print("Filtered data is empty. Nothing to export.")
         return
 
-    wb = Workbook()
-    ws = wb.active
-    ws.title = "Quote"
+    wb_final = Workbook()
+    ws_final = wb_final.active
+    ws_final.title = "Quote"
 
-    for r in dataframe_to_rows(df_header, index=False, header=False):
-        clean_row = ["" if (isinstance(cell, (int, float)) and cell == 0) else cell for cell in r]
-        ws.append(clean_row)
+    # Copy header including merged cells
+    for merged_range in ws_template.merged_cells.ranges:
+        ws_final.merge_cells(str(merged_range))
 
+    for row in ws_template.iter_rows(min_row=1, max_row=ws_template.max_row):
+        for cell in row:
+            new_cell = ws_final.cell(row=cell.row, column=cell.column, value=cell.value)
+            copy_cell_style(cell, new_cell)
 
-    ws.append([])
+    insert_row = ws_template.max_row + 2
 
-    main_headers = ["Line", "Item Code", "Item Description", "Quantity", "Unit Price", "Extended Price"]
-    ws.append(main_headers)
+    headers = ["Line", "Item Code", "Item Description", "Quantity", "Unit Price", "Extended Price"]
+    for col_idx, val in enumerate(headers, start=1):
+        ws_final.cell(row=insert_row, column=col_idx, value=val)
 
-    for idx, row in df_export.iterrows():
-        qty = "" if row["Qty"] == 0 else row["Qty"]
-        margin_unit_price = "" if row["Margin Unit Price"] == 0 else row["Margin Unit Price"]
-        margin_extended_price = "" if row["Margin Extended Price"] == 0 else row["Margin Extended Price"]
-
-        ws.append([
-            idx + 1,
-            row["Part Name"],
-            row["Description"],
-            qty,
-            margin_unit_price,
-            margin_extended_price
+    for i, row in enumerate(df_export.itertuples(index=False), start=1):
+        ws_final.append([
+            i,
+            row[0],  # Part Name
+            row[1],  # Description
+            row[2],  # Qty
+            row[8],  # Margin Unit Price
+            row[9],  # Margin Extended Price
         ])
 
-    ws.append([])
-    ws.append([])
+    insert_row = ws_final.max_row + 2
 
-    for r in dataframe_to_rows(df_footer, index=False, header=False):
-        clean_row = ["" if (isinstance(cell, (int, float)) and cell == 0) else cell for cell in r]
-        ws.append(clean_row)
+    # Copy footer including formatting from Footer.xlsx
+    wb_footer = load_workbook("Footer.xlsx")
+    ws_footer = wb_footer.active
 
+    for merged_range in ws_footer.merged_cells.ranges:
+        ws_final.merge_cells(start_row=insert_row + merged_range.min_row - 1,
+                             start_column=merged_range.min_col,
+                             end_row=insert_row + merged_range.max_row - 1,
+                             end_column=merged_range.max_col)
+
+    for row in ws_footer.iter_rows():
+        for cell in row:
+            new_cell = ws_final.cell(row=insert_row + cell.row - 1, column=cell.column, value=cell.value)
+            copy_cell_style(cell, new_cell)
 
     final_output_file = "final_quote.xlsx"
-    wb.save(final_output_file)
+    wb_final.save(final_output_file)
     print(f"Final Excel saved as '{final_output_file}'")
 
 # Buttons
 ttk.Button(left_frame, text="Save Product", command=save_product).pack(pady=10)
-ttk.Button(left_frame, text="Export to Calc Excel", command=export_to_excel).pack(pady=10)
+ttk.Button(left_frame, text="Export to Calc Excel", command=export_to_final_excel).pack(pady=10)
 ttk.Button(left_frame, text="Export to Final Excel", command=export_to_final_excel).pack(pady=10)
 ttk.Button(left_frame, text="Clear", command=clear_all).pack(pady=10)
 
